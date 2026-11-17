@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Field, create_engine, select, Session
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from uuid import UUID, uuid4
 from typing import Annotated
 from datetime import datetime, timezone
@@ -21,7 +22,7 @@ class TenderStatus(str, Enum):
     COMPLETED = "Completed"
 
 class TenderBase(SQLModel):
-    client_id: UUID
+    client_id: UUID | None = Field(default= None, nullable=True)
     tender_name: str = Field(default="")
     log_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     deadline: datetime | None = Field(default= None, nullable=True)
@@ -32,7 +33,6 @@ class Tender(TenderBase, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
 
 engine = create_engine("sqlite:///database.db")
-SQLModel.metadata.create_all(engine)
 
 def get_session():
     with Session(engine) as session:
@@ -41,6 +41,13 @@ def get_session():
 session_dep  = Annotated[Session, Depends(get_session)]
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/get-clients/", response_model=list[Client])
 def get_clients(session: session_dep):
@@ -65,7 +72,8 @@ def create_client(client_in: ClientBase, session: session_dep):
 
 @app.post("/create-tender/", response_model=Tender)
 def create_tender(tender_in: TenderBase, session:session_dep):
-    get_client_by_id(tender_in.client_id, session)
+    if tender_in.client_id != None:
+        get_client_by_id(tender_in.client_id, session)
 
     db_tender = Tender.model_validate(tender_in)
     session.add(db_tender)
